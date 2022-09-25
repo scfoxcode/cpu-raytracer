@@ -63,8 +63,8 @@ Ray buildRayForScreenPixel(ScreenProperties& screen, float pixelX, float pixelY)
 
 // Returns a negative number if no intersection
 // Otherwise returns the distance to intersection point
-float raySphereIntersection(Camera camera, Ray ray, Sphere sphere) {
-    glm::vec3 sphereV = sphere.position - camera.position;    
+float raySphereIntersection(Ray ray, Sphere sphere) {
+    glm::vec3 sphereV = sphere.position - ray.position;    
 
     float numLengthsToClosest = glm::dot(sphereV, ray.direction);
     glm::vec3 closestPos = ray.direction * numLengthsToClosest;
@@ -73,9 +73,17 @@ float raySphereIntersection(Camera camera, Ray ray, Sphere sphere) {
     if (distToSphere > sphere.radius) {
         return -1;
     }
-    // Dist to sphere is not what we want. Dist to camera at intersection point is correct
-    return numLengthsToClosest;
-    // We still need to calculate the intercept points if we do intersect
+
+    // Otherwise calculate points of intersection
+    // Get the distance between the closest point and points of intersection
+    float dist = sqrt(sphere.radius * sphere.radius - distToSphere * distToSphere);
+    glm::vec3 intersect1 = closestPos + dist * ray.direction;
+    glm::vec3 intersect2 = closestPos - dist * ray.direction;
+    float intersect1Dist = glm::length(intersect1 - ray.position);
+    float intersect2Dist = glm::length(intersect2 - ray.position);
+
+    // Determine which point the ray hit first, smallest distance
+    return intersect1Dist < intersect2Dist ? intersect1Dist : intersect2Dist;
 }
 
 

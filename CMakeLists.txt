@@ -12,5 +12,9 @@ include_directories("src/")
 # Include glm for vector/matrix operations
 include_directories("libs/glm-master/")
 
-add_executable(cpu-raytracer src/main.cpp)
+add_executable(cpu-raytracer
+    src/main.cpp
+    src/light.cpp
+    src/rays.cpp
+)
 target_link_libraries(cpu-raytracer ${SDL2_LIBRARIES})

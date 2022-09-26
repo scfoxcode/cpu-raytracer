@@ -1,7 +1,7 @@
 #include "SDL.h" 
 #include <glm/glm.hpp>
 #include <chrono>
-#include "rays.h"
+#include "light.h"
 
 // One great reference
 // https://www.youtube.com/watch?v=HFPlKQGChpE
@@ -20,69 +20,71 @@ Camera initCamera() {
     };
 };
 
-Sphere initSphere(glm::vec3 position, float radius) {
-    return {
-        position,
-        radius
-    };
-};
-
 float unitFloat(float a, float b, float v) {
     return (v - a) / (b - a);
 }
 
-uint32_t buildPixelFromRays(int x, int y, bool useMultiRays, ScreenProperties &screenP, Sphere &sphere) {
-    float avgDist = 0;
+uint32_t buildPixelFromRays(
+    int x,
+    int y,
+    bool useMultiRays,
+    ScreenProperties &screenP,
+    Sphere &sphere,
+    Lights& lights) {
 
-    if (useMultiRays) {
-        float dists[5];
-
-        Ray r0 = buildRayForScreenPixel(screenP, x, y); 
-        dists[0] = raySphereIntersection(r0, sphere); 
-        Ray r1 = buildRayForScreenPixel(screenP, x-1.5, y-1.5); 
-        dists[1] = raySphereIntersection(r1, sphere); 
-        Ray r2 = buildRayForScreenPixel(screenP, x+1.5, y-1.5); 
-        dists[2] = raySphereIntersection(r2, sphere); 
-        Ray r3 = buildRayForScreenPixel(screenP, x-1.5, y+1.5); 
-        dists[3] = raySphereIntersection(r3, sphere); 
-        Ray r4 = buildRayForScreenPixel(screenP, x+1.5, y+1.5); 
-        dists[4] = raySphereIntersection(r4, sphere); 
-
-        // We have a bug where we return negative or 0 for no intersect
-        // but this results in massive brightness, we want to increase the average dist to lower our brightness....
-        float sum = 0;
-        int numIncluded = 0;
-        for (int i=0; i<5; i++) {
-            if (dists[i] > 0) {
-                sum += dists[i];
-                numIncluded++;
+    Ray r = buildRayForScreenPixel(screenP, x, y); 
+    MaybeIntersect test = raySphereIntersection(r, sphere); 
+    // This bug could happen if the test position returned was always the one
+    // closest to the target... which it will be in the next case???
+    std::vector<glm::vec3> colours;
+    if (test.intersect) {
+        for (int i=0; i<lights.size(); i++) {
+            Ray r2 = buildRayForPoints(lights[i]->emitter.position, test.position);
+            // We know it intersect with light because we've build our ray to point straight at it
+            // What we need to know is does the sphere or other geometry block the ray
+            // r2.position += (r2.position - sphere.position) * 0.001f; 
+            
+            r2.position += r2.direction * 0.01f; // Tiny hack to move ray slightly away from intial collision
+            MaybeIntersect test2 = raySphereIntersection(r2, sphere);
+            if (x == 1280/2 + 100 && y == 720/2 + 100) {
+                printf("What we got here\n");
+                printf(test2.intersect ? "true\n" : "false\n");
+                printf("xyz %f %f %f\n", test2.position[0], test2.position[1], test2.position[2]);
+                printf("xyz pos %f %f %f\n", r2.position[0], r2.position[1], r2.position[2]);
+                printf("xyz dir %f %f %f\n", r2.direction[0], r2.direction[1], r2.direction[2]);
+                printf("xyz sphere%f %f %f\n", sphere.position[0], sphere.position[1], sphere.position[2]);
+                glm::vec3 ep = lights[i]->emitter.position;
+                printf("xyz em%f %f %f\n", ep[0], ep[1], ep[2]);
             }
+            if (!test2.intersect) { // If we don't intersect with ourself, add light colour
+                colours.push_back(lights[i]->colour);
+            }
+            // For a sphere there is a hack we could do here, just see if the ray origin is behind
+            // the imaginary plane bisecting the sphere perpendicular to the light
+            // But I need to understand the error
+            // Could also just use the surface normal of the sphere at that point
         }
-        // We want a larger dist for lower brightness if some have not intersected
-        if (numIncluded == 0) {
-            avgDist = 1000000; // Inf
-        } else {
-            avgDist = sum * (5 / numIncluded) / numIncluded;
-        }
-
     } else {
-        Ray r = buildRayForScreenPixel(screenP, x, y); 
-        avgDist = raySphereIntersection(r, sphere); 
-    }
-
-    if (avgDist <= 0) {
         return 0;
     }
-
-    // We need to map the values in a reasonable range. Lets say 10 meters is our max vision and linearly interp
-    float brightness = 1.0f / (avgDist + 0.6); // +0.5 is a hack, need a better way to clamp
-    // Massive hack, we want to actually check normals and lightsources going forwards
-    // float brightness = unitFloat(sphere.position.z, sphere.position.z - sphere.radius, avgDist);
-    uint32_t val256 = brightness * 256;
-    if (val256 > 255) {
-        val256 = 255;
+    if (colours.size() < 1) {
+        // printf("crap\n");
+        return 0; // We couldn't see any lights jack
     }
-    return (val256 | (val256 << 8) | (val256 << 16) | (255 << 24));
+    // Strange... I'd expect only the side facing the sun to be hit
+
+    glm::vec3 colour;
+    // Average colours and normalise, ignore brightness for now
+    for (int i=0; i<colours.size(); i++) {
+        colour += colours[i];
+    }
+    colour = glm::normalize(colour);
+    uint32_t red = colour[0] * 255;
+    uint32_t green = colour[1] * 255;
+    uint32_t blue = colour[2] * 255;
+
+    uint32_t output = (blue | ( green << 8) | (red << 16) | (255 << 24));
+    return output;
     
 }
 
@@ -92,8 +94,20 @@ int main(int argc, char *argv[]) {
 
     // Create a camera and a sphere in the scene
     Camera camera = initCamera();
-    Sphere sphere1 = initSphere({0.0, 0.0, 6.0}, 5.8f);
+    Sphere sphere1 = initSphere(glm::vec3(0.0, 0.0, -6.0), 5.8f);
 
+    // Create lightsources
+    Lights lights;
+    lights.push_back(new Light(
+        initSphere(glm::vec3(20.0, 0.0, -0.15), 0.1f),
+        glm::vec3(1.0f, 0.0f, 0.0f),
+        1.0f
+    ));
+    lights.push_back(new Light(
+        initSphere(glm::vec3(-40.0, 20.0, 5.0f), 0.1f),
+        glm::vec3(0.1f, 0.5f, 0.9f),
+        1.0f
+    ));
 
     SDL_Window *window = SDL_CreateWindow(
         "cpu-raytracer",
@@ -126,7 +140,7 @@ int main(int argc, char *argv[]) {
     int count = 0;
     for (int y=0; y<RESY; y++) {
         for (int x=0; x<RESX; x++) {
-            pixels[count] = buildPixelFromRays(x, y, true, screenP, sphere1);
+            pixels[count] = buildPixelFromRays(x, y, true, screenP, sphere1, lights);
             count++;
         }
     }

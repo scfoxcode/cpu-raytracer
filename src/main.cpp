@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <chrono>
 #include "light.h"
+#include "tonemapping.h"
 
 // One great reference
 // https://www.youtube.com/watch?v=HFPlKQGChpE
@@ -15,8 +16,8 @@ const int pixelIntCount = pixelCount * bpp;
 Camera initCamera() {
     return {
         glm::vec3(0.0, 0.0, 0.0),
-        glm::vec3(0.0, 0.0, 1.0), // Looking into the screen
-        40.0f
+        glm::vec3(0.0, 0.0, -1.0), // Looking into the screen
+        75.0f // this value seems to not be working
     };
 };
 
@@ -42,22 +43,22 @@ uint32_t buildPixelFromRays(
             Ray r2 = buildRayForPoints(lights[i]->emitter.position, test.position);
             // We know it intersect with light because we've build our ray to point straight at it
             // What we need to know is does the sphere or other geometry block the ray
-            // r2.position += (r2.position - sphere.position) * 0.001f; 
             
             r2.position += r2.direction * 0.01f; // Tiny hack to move ray slightly away from intial collision
             MaybeIntersect test2 = raySphereIntersection(r2, sphere);
-            if (x == 1280/2 + 100 && y == 720/2 + 100) {
-                printf("What we got here\n");
-                printf(test2.intersect ? "true\n" : "false\n");
-                printf("xyz %f %f %f\n", test2.position[0], test2.position[1], test2.position[2]);
-                printf("xyz pos %f %f %f\n", r2.position[0], r2.position[1], r2.position[2]);
-                printf("xyz dir %f %f %f\n", r2.direction[0], r2.direction[1], r2.direction[2]);
-                printf("xyz sphere%f %f %f\n", sphere.position[0], sphere.position[1], sphere.position[2]);
-                glm::vec3 ep = lights[i]->emitter.position;
-                printf("xyz em%f %f %f\n", ep[0], ep[1], ep[2]);
-            }
             if (!test2.intersect) { // If we don't intersect with ourself, add light colour
-                colours.push_back(lights[i]->colour);
+                // Use dot product between surface normal and ray to determine how
+                // strong the colour should be
+                // Note: This only works for spheres
+                float dot = glm::dot(r2.direction, glm::normalize(r2.position - sphere.position));
+                if (dot < 0) {
+                    printf ("oh shit");
+                }
+                if (dot > 1.1) {
+                    printf ("oh impossible %f\n", dot);
+                }
+                // Some kind of bug when brightness is > 0.5
+                colours.push_back(lights[i]->colour * lights[i]->brightness * dot);
             }
             // For a sphere there is a hack we could do here, just see if the ray origin is behind
             // the imaginary plane bisecting the sphere perpendicular to the light
@@ -74,14 +75,19 @@ uint32_t buildPixelFromRays(
     // Strange... I'd expect only the side facing the sun to be hit
 
     glm::vec3 colour;
-    // Average colours and normalise, ignore brightness for now
+    // Add all contributing hdr colours together
     for (int i=0; i<colours.size(); i++) {
         colour += colours[i];
     }
-    colour = glm::normalize(colour);
-    uint32_t red = colour[0] * 255;
-    uint32_t green = colour[1] * 255;
-    uint32_t blue = colour[2] * 255;
+
+    // Tone map
+    colour = reinhardExtended(colour);
+
+    // colour = glm::normalize(colour);
+
+    uint32_t red = colour.r * 255;
+    uint32_t green = colour.g * 255;
+    uint32_t blue = colour.b * 255;
 
     uint32_t output = (blue | ( green << 8) | (red << 16) | (255 << 24));
     return output;
@@ -94,19 +100,24 @@ int main(int argc, char *argv[]) {
 
     // Create a camera and a sphere in the scene
     Camera camera = initCamera();
-    Sphere sphere1 = initSphere(glm::vec3(0.0, 0.0, -6.0), 5.8f);
+    Sphere sphere1 = initSphere(glm::vec3(0.0, 0.0, -20.0), 5.8f);
 
     // Create lightsources
     Lights lights;
     lights.push_back(new Light(
-        initSphere(glm::vec3(20.0, 0.0, -0.15), 0.1f),
+        initSphere(glm::vec3(200.0, 0.0, -15.0), 0.1f),
         glm::vec3(1.0f, 0.0f, 0.0f),
+        1.4f
+    ));
+    lights.push_back(new Light(
+        initSphere(glm::vec3(-40.0, 20.0, -14.0f), 0.1f),
+        glm::vec3(0.1f, 0.0f, 0.9f),
         1.0f
     ));
     lights.push_back(new Light(
-        initSphere(glm::vec3(-40.0, 20.0, 5.0f), 0.1f),
-        glm::vec3(0.1f, 0.5f, 0.9f),
-        1.0f
+        initSphere(glm::vec3(-10.0, -200.0, -17.0f), 0.1f),
+        glm::vec3(0.2f, 0.8f, 0.1f),
+        0.5f
     ));
 
     SDL_Window *window = SDL_CreateWindow(

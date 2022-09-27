@@ -14,6 +14,7 @@ include_directories("libs/glm-master/")
 
 add_executable(cpu-raytracer
     src/main.cpp
+    src/tonemapping.cpp
     src/light.cpp
     src/rays.cpp
 )

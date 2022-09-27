@@ -1,4 +1,5 @@
 #include "rays.h"
+#include <stdio.h>
 
 Sphere initSphere(glm::vec3 position, float radius) {
     return {
@@ -9,14 +10,18 @@ Sphere initSphere(glm::vec3 position, float radius) {
 
 // Important note that these scales are not what is used, as the screen would be
 // way off in the distance. We just need the ratios to get the angles and the normalise
+// Note: This thing is very sus
 ScreenProperties buildScreenProperties(int resX, int resY, int fov) {
     ScreenProperties screen = {resX, resY, fov, 1, 0, 0};
-    screen.pixelDX = resX / fov;
-    screen.pixelDY = resY / fov;
+    printf("test %i %i %i\n", resX, resY);
+    // These dx values are wrong. When we hack it in the next function it works
+    screen.pixelDX = resX / fov; // this feels wrong?
+    screen.pixelDY = resY / fov; // but is it
+    printf("dx %f %f\n", screen.pixelDX, screen.pixelDY);
 
     float halfHorizontalFov = (fov / 2) * M_PI / 180.0f; // Half fov and convert to rads
 
-    screen.virtualDist = -1.0f * (resX / 2) / tan(halfHorizontalFov);
+    screen.virtualDist = (resX / 2) / tan(halfHorizontalFov);
 
     return screen;
 }
@@ -33,10 +38,10 @@ Ray buildRayForScreenPixel(ScreenProperties& screen, float pixelX, float pixelY)
     int halfResY = screen.resY / 2;
     
     ray.direction = glm::vec3(
-        (-halfResX * screen.pixelDX) + pixelX * screen.pixelDX,
+        -halfResX + pixelX,
         // Must flip y here as screen y and world y are backwards
-        (halfResY * screen.pixelDX) - pixelY * screen.pixelDX,
-        screen.virtualDist);
+        halfResY - pixelY,
+        -screen.virtualDist);
 
     ray.direction = glm::normalize(ray.direction);
 

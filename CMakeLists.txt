@@ -17,5 +17,6 @@ add_executable(cpu-raytracer
     src/tonemapping.cpp
     src/light.cpp
     src/rays.cpp
+    src/sphere.cpp
 )
 target_link_libraries(cpu-raytracer ${SDL2_LIBRARIES})

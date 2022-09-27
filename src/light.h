@@ -2,7 +2,7 @@
 #define __light__
 #include <vector>
 #include <glm/glm.hpp>
-#include "rays.h"
+#include "sphere.h"
 
 // For now assume spherical light
 // We really do want rectangular lights, and beam lighting (spots) though going forward

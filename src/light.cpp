@@ -1,7 +1,7 @@
 #include "light.h"
 
 Light::Light() {
-    emitter = initSphere(glm::vec3(0.0f, 0.0f, 0.0f), 1.0f);
+    emitter = Sphere(glm::vec3(0.0f, 0.0f, 0.0f), 1.0f);
     colour = glm::vec3(1.0f, 1.0f, 1.0f);
     brightness = 1.0f;
 }

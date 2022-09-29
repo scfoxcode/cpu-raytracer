@@ -9,6 +9,7 @@ struct Camera {
 
 struct MaybeIntersect {
     bool intersect;
+    float distance;
     glm::vec3 position;
 };
 

@@ -19,6 +19,7 @@ void Sphere::init(glm::vec3 position, float radius) {
 
 // Should build a real maybe type, not this hackery, or pass a reference in and return bool
 MaybeIntersect Sphere::rayIntersection(Ray& ray) {
+    MaybeIntersect result = { .intersect = false };
 
     float numLengthsToClosest = glm::dot(position - ray.position, ray.direction);
     glm::vec3 closestPos = ray.position + ray.direction * numLengthsToClosest;
@@ -28,7 +29,7 @@ MaybeIntersect Sphere::rayIntersection(Ray& ray) {
     //
     // What will this do if a ray starts inside the sphere...
     if (distToSphere > radius) {
-        return { .intersect = false };
+        return result;
     }
 
     // Otherwise calculate points of intersection
@@ -49,11 +50,23 @@ MaybeIntersect Sphere::rayIntersection(Ray& ray) {
         // Determine which point the ray hit first, smallest distance
         float intersect1Dist = glm::length(intersect1 - ray.position);
         float intersect2Dist = glm::length(intersect2 - ray.position);
-        glm::vec3& intersectP = intersect1Dist < intersect2Dist ? intersect1 : intersect2;
-        return { .intersect = true, .position = intersectP };
+
+        result.intersect = true;
+        result.position = intersect1Dist < intersect2Dist ? intersect1 : intersect2;
+        result.distance = intersect1Dist < intersect2Dist ? intersect1Dist : intersect2Dist;
+
     } else if (!i1 && !i2) {
-        return { .intersect = false };
+        return result;
+
     } else {
-        return { .intersect = true, .position = i1 ? intersect1 : intersect2 };
+        result.intersect = true;
+        result.position = i1 ? intersect1 : intersect2;
+        result.distance =  glm::length((i1 ? intersect1 : intersect2) - ray.position);
+
     }
+    return result;
+}
+
+glm::vec3 Sphere::getPosition() {
+    return position;
 }

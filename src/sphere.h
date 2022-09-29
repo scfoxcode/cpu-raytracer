@@ -14,6 +14,8 @@ public:
     void init(glm::vec3 position, float radius);
     
     MaybeIntersect rayIntersection(Ray& ray); 
+
+    glm::vec3 getPosition();
 };
 
 #endif

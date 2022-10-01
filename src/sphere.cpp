@@ -70,3 +70,7 @@ MaybeIntersect Sphere::rayIntersection(Ray& ray) {
 glm::vec3 Sphere::getPosition() {
     return position;
 }
+
+glm::vec3 Sphere::getSurfaceNormal(glm::vec3& surfacePoint) {
+    return glm::normalize(surfacePoint - position);
+}

@@ -4,11 +4,11 @@
 #include "light.h"
 #include "tonemapping.h"
 #include "sphere.h"
+#include "poly.h"
 #include <thread>
 
 // One great reference
 // https://www.youtube.com/watch?v=HFPlKQGChpE
-
 
 const int RESX = 1920;
 const int RESY = 1080;
@@ -82,10 +82,9 @@ uint32_t buildPixel(
     std::vector<glm::vec3> colours;
     for (int i=0; i<lights.size(); i++) {
         Ray r2 = buildRayForPoints(lights[i]->emitter.position, maybe.raypath.position);
-        r2.position += r2.direction * 0.01f; // Tiny hack to move ray slightly away from intial collision
+        r2.position += r2.direction * 0.001f; // Tiny hack to move ray slightly away from intial collision
 
-        // Dangerous assumption here that target is sphere by getting center, but best we can do for now
-        float dot = glm::dot(r2.direction, glm::normalize(r2.position - hit.getPosition()));
+        float dot = glm::dot(r2.direction, hit.getSurfaceNormal(r2.position));
         if (dot < 0) {
             continue; // Surface is facing away from the light
         }
@@ -120,20 +119,55 @@ uint32_t buildPixel(
 
 void setupSceneLights(Lights& lights) {
     lights.push_back(new Light(
-        Sphere(glm::vec3(200.0, 0.0, -75.0), 0.1f),
-        glm::vec3(1.0f, 0.0f, 0.0f),
-        2.4f
+        Sphere(glm::vec3(0.0, 20.0, -20.0), 1.0f),
+        glm::vec3(1.0f, 1.0f, 0.8f),
+        2.5f
     ));
-    lights.push_back(new Light(
-        Sphere(glm::vec3(-40.0, 60.0, 8.0f), 0.1f),
-        glm::vec3(0.1f, 0.0f, 0.9f),
-        2.0f
+}
+
+void setupSpheres(std::vector<ICollidable*>& sceneObjects) {
+    sceneObjects.push_back(new Sphere(glm::vec3(0.0, 0.0, -30.0), 3.0f));
+    sceneObjects.push_back(new Sphere(glm::vec3(8.0, -8.0, -27.0), 2.0f));
+} 
+
+void setupBox(std::vector<ICollidable*>& sceneObjects) {
+    float wh = 20; // Half width
+    float hh = 20; // Half height
+    float y = 10; // Y offset
+    float d = 50;
+
+    // Ground plane
+    sceneObjects.push_back(new Poly(
+        glm::vec3(-wh, -y, 0.0),
+        glm::vec3(-wh, -y, -d),
+        glm::vec3(wh, -y, -d),
+        glm::vec3(wh, -y, 0.0)
     ));
-    lights.push_back(new Light(
-        Sphere(glm::vec3(-2.0, -10.0, -17.0f), 0.1f),
-        glm::vec3(0.2f, 0.8f, 0.1f),
-        1.5f
+
+    // Left plane
+    sceneObjects.push_back(new Poly(
+        glm::vec3(-wh, -y, 0.0),
+        glm::vec3(-wh, -y + hh, 0.0),
+        glm::vec3(-wh, -y + hh, -d),
+        glm::vec3(-wh, -y, -d)
     ));
+
+    // Right plane
+    sceneObjects.push_back(new Poly(
+        glm::vec3(wh, -y, -d),
+        glm::vec3(wh, -y + hh, -d),
+        glm::vec3(wh, -y + hh, 0.0),
+        glm::vec3(wh, -y, 0.0)
+    ));
+    //
+    // Back plane
+    sceneObjects.push_back(new Poly(
+        glm::vec3(-wh, -y, -d),
+        glm::vec3(-wh, -y + hh, -d),
+        glm::vec3(wh, -y + hh, -d),
+        glm::vec3(wh, -y, -d)
+    ));
+
 }
 
 int main(int argc, char *argv[]) {
@@ -147,15 +181,10 @@ int main(int argc, char *argv[]) {
     // Create a camera and a sphere in the scene
     Camera camera = initCamera();
 
+    // Create scene geometry
     std::vector<ICollidable*> sceneObjects; 
-    Sphere sphere1(glm::vec3(0.0, 0.0, -20.5), 5.5f);
-    Sphere sphere2(glm::vec3(8.0, 0.0, -17.0), 2.0f);
-    Sphere sphere3(glm::vec3(0.0, -6.0, -16.0), 1.0f);
-    Sphere sphere4(glm::vec3(-15.0, -5.0, -28.0), 3.5f);
-    sceneObjects.push_back(&sphere1);
-    sceneObjects.push_back(&sphere2);
-    sceneObjects.push_back(&sphere3);
-    sceneObjects.push_back(&sphere4);
+    setupBox(sceneObjects);
+    setupSpheres(sceneObjects);
 
     // Create the scenes light sources
     Lights lights;
@@ -192,7 +221,6 @@ int main(int argc, char *argv[]) {
     int count = 0;
     for (int y=0; y<RESY; y++) {
         for (int x=0; x<RESX; x++) {
-            // pixels[count] = buildPixelFromRays(x, y, screenP, sphere1, lights);
             pixels[count] = buildPixel(x, y, screenP, lights, sceneObjects);
             count++;
         }
@@ -224,6 +252,10 @@ int main(int argc, char *argv[]) {
     }
 
     delete [] pixels;
+
+    for (int i=0; i<sceneObjects.size(); i++) {
+        delete sceneObjects[i];
+    }
 
     SDL_DestroyTexture(sceneTexture);
     SDL_DestroyWindow(window);

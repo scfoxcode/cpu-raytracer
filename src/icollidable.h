@@ -8,7 +8,8 @@ public:
     ICollidable(){};
     virtual ~ICollidable(){}
     virtual MaybeIntersect rayIntersection(Ray& ray) = 0;
-    virtual glm::vec3 getPosition() =0;
+    virtual glm::vec3 getPosition() = 0;
+    virtual glm::vec3 getSurfaceNormal(glm::vec3& surfacePoint) = 0;
 };
 
 #endif

@@ -16,6 +16,8 @@ public:
     MaybeIntersect rayIntersection(Ray& ray); 
 
     glm::vec3 getPosition();
+
+    glm::vec3 getSurfaceNormal(glm::vec3& surfacePoint);
 };
 
 #endif

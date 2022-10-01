@@ -14,6 +14,26 @@
 const int RESX = 1920; //960; //480
 const int RESY = 1080; //540; //270
 const int pixelCount = RESX * RESY;
+
+struct ShadowMap {
+    int resX;
+    int resY;
+    float fov;
+    float ratio;
+    float* data;
+};
+
+float getData(float x, float y, ShadowMap& map) {
+    return map.data[int(round(y) * map.resX + round(x))];
+}
+
+float shadowMapInterp(
+    int x,
+    int y,
+    ShadowMap& shadowMap) {
+
+    return 0.0f;
+}
 //
 // This type and maybe intersect are both bad, need better solutions
 struct MaybeIntersectObject {
@@ -53,15 +73,15 @@ MaybeIntersectObject rayClosestIntersect(
 
 // Build a shadow map for a single scene light
 void buildShadowMap(
-    int xRes,
-    int yRes, 
-    float fov,
     Light& light,
     std::vector<ICollidable*>& objects,
-    float* data // this must be initailised to the right sense when provided
+    ShadowMap& shadowMap
     ) {
     printf("light %f\n", light.brightness);
     // Ray trace the whole scene but at a low resolution, for a single light
+    float xRes = shadowMap.resX;
+    float yRes = shadowMap.resY;
+    float fov = shadowMap.fov;
     ScreenProperties screenP = buildScreenProperties(xRes, yRes, fov);
 
     int count = 0;
@@ -72,7 +92,7 @@ void buildShadowMap(
             MaybeIntersectObject maybe = rayClosestIntersect(r, objects);
 
             if (!maybe.raypath.intersect) {
-                data[count] = 0.0f;
+                shadowMap.data[count] = 0.0f;
                 count++;
                 continue;
             }
@@ -88,14 +108,14 @@ void buildShadowMap(
 
             float dot = glm::dot(r2.direction, hit.getSurfaceNormal(r2.position));
             if (dot < 0) {
-                data[count] = 0;
+                shadowMap.data[count] = 0;
                 count++;
                 continue; 
             }
 
             MaybeIntersectObject test2 = rayClosestIntersect(r2, objects);
             bool lightIsVisible = !test2.raypath.intersect;
-            data[count] = lightIsVisible ? dot : 0.0f;
+            shadowMap.data[count] = lightIsVisible ? dot : 0.0f;
             count++;
             // Maybe we'd want to store distance too going forward for inverse square law
         }
@@ -117,7 +137,7 @@ glm::vec3 buildPixel(
     ScreenProperties& screenP,
     Lights& lights,
     std::vector<ICollidable*>& objects,
-    float* shadowMap
+    ShadowMap& shadowMap
     ) {
 
     glm::vec3 colour(0.0f, 0.0f, 0.0f);
@@ -136,23 +156,56 @@ glm::vec3 buildPixel(
     std::vector<glm::vec3> colours;
     for (int i=0; i<lights.size(); i++) {
         // Interpolate from shadow map
-        // Magic numbers, hardcoded shadow map ratio 4 here
-        float sx = float(x) / 4.0f;
-        float sy = float(y) / 4.0f;
+        float sx = float(x) / shadowMap.ratio;
+        float sy = float(y) / shadowMap.ratio;
         float cx = int(sx);
         float cy = int(sy);
         float left = 1.0f - (sx - cx);
         float right = (sx - cx);
         float up = 1.0f - (sy - cy);
         float down = (sy - cy);
+        float width = shadowMap.resX;
+        float height = shadowMap.resY;
+        
+        // I want to do a weighted box blur, using the floats I have
+        float samples[3][3];
+        for (int i=0; i<3; i++) {
+            for (int j=0; j<3; j++) {
+                samples[i][j] = -1;
+            }
+        }
 
-        // Remove all these hardcoded 480
-        float sample = shadowMap[int(cy * 480 + cx)];
-        float sampleLeft = shadowMap[int(cy * 480 + (cx > 0 ? cx - 1 : 0))] * right;
-        float sampleRight = shadowMap[int(cy * 480 + (cx < 479 ? cx + 1 : 479))] * left;
-        float sampleUp = shadowMap[int((cy > 0 ? cy - 1 : cy) * 480 + cx)] * up;
-        float sampleDown = shadowMap[int((cy < 269  ? cy + 1 : cy) * 480 + cx)] * down;
-        float occlusionValue = (sample + sampleLeft + sampleRight + sampleUp + sampleDown) * 0.2;
+        if (cx > 0 && cy > 0)
+            samples[0][0] = getData(cx - 1, cy - 1, shadowMap); 
+        if (cy > 0)
+            samples[1][0] = getData(cx, cy - 1, shadowMap); 
+        if (cx < width - 1 && cy > 0)
+            samples[2][0] = getData(cx + 1, cy - 1, shadowMap); 
+        
+        samples[1][1] = getData(cx, cy, shadowMap); 
+        if (cx > 0)
+            samples[0][1] = getData(cx - 1, cy, shadowMap); 
+        if (cx < width - 1)
+            samples[2][1] = getData(cx + 1, cy, shadowMap); 
+
+        if (cx > 0 && cy < height - 1)
+            samples[0][2] = getData(cx - 1, cy + 1, shadowMap); 
+        if (cy < height - 1)
+            samples[1][2] = getData(cx, cy + 1, shadowMap); 
+        if (cx < width - 1 && cy < height - 1)
+            samples[2][2] = getData(cx + 1, cy + 1, shadowMap); 
+
+        float count = 0.0f;
+        float occlusionValue = 0.0f;
+        for (int i=0; i<3; i++) {
+            for (int j=0; j<3; j++) {
+                if (samples[i][j] > -0.1) {
+                    count++;
+                    occlusionValue += samples[i][j];
+                }
+            }
+        }
+        occlusionValue = occlusionValue / count;
         colour = (lights[i]->colour * lights[i]->brightness * occlusionValue);
     }
     
@@ -266,8 +319,13 @@ int main(int argc, char *argv[]) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 
     // Build the shadow map
-    float* shadowMap = new float[480 * 270];
-    buildShadowMap(480, 270, camera.fov, *lights[0], sceneObjects, shadowMap);
+    ShadowMap shadowMap;
+    shadowMap.resX = 240; // 480;
+    shadowMap.resY = 135; // 270
+    shadowMap.fov = camera.fov;
+    shadowMap.ratio = RESX / shadowMap.resX;
+    shadowMap.data = new float[shadowMap.resX * shadowMap.resY];
+    buildShadowMap(*lights[0], sceneObjects, shadowMap);
     
 
     // Don't include this in time as we only need to allocate the memory once

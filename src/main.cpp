@@ -6,22 +6,15 @@
 #include "sphere.h"
 #include "poly.h"
 #include <thread>
+#include <math.h>
 
 // One great reference
 // https://www.youtube.com/watch?v=HFPlKQGChpE
 
-const int RESX = 1280; //960;
-const int RESY = 720; //540;
+const int RESX = 1920; //960; //480
+const int RESY = 1080; //540; //270
 const int pixelCount = RESX * RESY;
-
-Camera initCamera() {
-    return {
-        glm::vec3(0.0, 0.0, 0.0),
-        glm::vec3(0.0, 0.0, -1.0), // Looking into the screen
-        75.0f
-    };
-};
-
+//
 // This type and maybe intersect are both bad, need better solutions
 struct MaybeIntersectObject {
     MaybeIntersect raypath;
@@ -58,12 +51,75 @@ MaybeIntersectObject rayClosestIntersect(
     return output;
 }
 
+// Build a shadow map for a single scene light
+void buildShadowMap(
+    int xRes,
+    int yRes, 
+    float fov,
+    Light& light,
+    std::vector<ICollidable*>& objects,
+    float* data // this must be initailised to the right sense when provided
+    ) {
+    printf("light %f\n", light.brightness);
+    // Ray trace the whole scene but at a low resolution, for a single light
+    ScreenProperties screenP = buildScreenProperties(xRes, yRes, fov);
+
+    int count = 0;
+    for (int y=0; y<yRes; y++) {
+        for (int x=0; x<xRes; x++) {
+            // Test ray for pixel against every object in the scene
+            Ray r = buildRayForScreenPixel(screenP, x, y); 
+            MaybeIntersectObject maybe = rayClosestIntersect(r, objects);
+
+            if (!maybe.raypath.intersect) {
+                data[count] = 0.0f;
+                count++;
+                continue;
+            }
+            ICollidable& hit = *maybe.target;
+
+            // The ray hit an object.
+            // Bounce a ray to the light
+            // If there is a collision, that light does not contribute to the pixel
+            std::vector<glm::vec3> colours;
+            glm::vec3 colourForLight(0.0f, 0.0f, 0.0f);
+            Ray r2 = buildRayForPoints(light.emitter.position, maybe.raypath.position);
+            r2.position += r2.direction * 0.001f; // Tiny hack to move ray slightly away from intial collision
+
+            float dot = glm::dot(r2.direction, hit.getSurfaceNormal(r2.position));
+            if (dot < 0) {
+                data[count] = 0;
+                count++;
+                continue; 
+            }
+
+            MaybeIntersectObject test2 = rayClosestIntersect(r2, objects);
+            bool lightIsVisible = !test2.raypath.intersect;
+            data[count] = lightIsVisible ? dot : 0.0f;
+            count++;
+            // Maybe we'd want to store distance too going forward for inverse square law
+        }
+    }
+}
+
+Camera initCamera() {
+    return {
+        glm::vec3(0.0, 0.0, 0.0),
+        glm::vec3(0.0, 0.0, -1.0), // Looking into the screen
+        75.0f
+    };
+};
+
+
 glm::vec3 buildPixel(
     int x,
     int y,
     ScreenProperties& screenP,
     Lights& lights,
-    std::vector<ICollidable*>& objects) {
+    std::vector<ICollidable*>& objects,
+    float* shadowMap
+    ) {
+
     glm::vec3 colour(0.0f, 0.0f, 0.0f);
 
     // Test ray for pixel against every object in the scene
@@ -76,37 +132,30 @@ glm::vec3 buildPixel(
     ICollidable& hit = *maybe.target;
 
     // The ray hit an object.
-    // Bounce a ray to each light in the scene, checking for collisions with any object
-    // If there is a collision, that light does not contribute to the pixel
+    // Check shadow map to determine colour
     std::vector<glm::vec3> colours;
     for (int i=0; i<lights.size(); i++) {
-        glm::vec3 colourForLight(0.0f, 0.0f, 0.0f);
-        int numPoints = lights[i]->emitter.points.size();
-        for (int j=0; j<numPoints; j++) { // Multi samples for soft shadows
-            Ray r2 = buildRayForPoints(lights[i]->emitter.points[j], maybe.raypath.position);
-            r2.position += r2.direction * 0.001f; // Tiny hack to move ray slightly away from intial collision
+        // Interpolate from shadow map
+        // Magic numbers, hardcoded shadow map ratio 4 here
+        float sx = float(x) / 4.0f;
+        float sy = float(y) / 4.0f;
+        float cx = int(sx);
+        float cy = int(sy);
+        float left = 1.0f - (sx - cx);
+        float right = (sx - cx);
+        float up = 1.0f - (sy - cy);
+        float down = (sy - cy);
 
-            float dot = glm::dot(r2.direction, hit.getSurfaceNormal(r2.position));
-            if (dot < 0) {
-                continue; // Surface is facing away from the light
-            }
-
-            MaybeIntersectObject test2 = rayClosestIntersect(r2, objects);
-            bool isLightInView = !test2.raypath.intersect;
-
-            if (!isLightInView) {
-                continue;
-            }
-
-            colourForLight += lights[i]->colour * lights[i]->brightness * dot * 1.0f/float(numPoints);
-        }
-        colours.push_back(colourForLight);
+        // Remove all these hardcoded 480
+        float sample = shadowMap[int(cy * 480 + cx)];
+        float sampleLeft = shadowMap[int(cy * 480 + (cx > 0 ? cx - 1 : 0))] * right;
+        float sampleRight = shadowMap[int(cy * 480 + (cx < 479 ? cx + 1 : 479))] * left;
+        float sampleUp = shadowMap[int((cy > 0 ? cy - 1 : cy) * 480 + cx)] * up;
+        float sampleDown = shadowMap[int((cy < 269  ? cy + 1 : cy) * 480 + cx)] * down;
+        float occlusionValue = (sample + sampleLeft + sampleRight + sampleUp + sampleDown) * 0.2;
+        colour = (lights[i]->colour * lights[i]->brightness * occlusionValue);
     }
     
-    // Add all contributing hdr colours together
-    for (int i=0; i<colours.size(); i++) {
-        colour += colours[i];
-    }
 
     return colour;
 
@@ -216,6 +265,11 @@ int main(int argc, char *argv[]) {
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 
+    // Build the shadow map
+    float* shadowMap = new float[480 * 270];
+    buildShadowMap(480, 270, camera.fov, *lights[0], sceneObjects, shadowMap);
+    
+
     // Don't include this in time as we only need to allocate the memory once
     uint32_t* pixels = new uint32_t[pixelCount];
 
@@ -235,7 +289,7 @@ int main(int argc, char *argv[]) {
     int count = 0;
     for (int y=0; y<RESY; y++) {
         for (int x=0; x<RESX; x++) {
-            glm::vec3 sum = buildPixel(x, y, screenP, lights, sceneObjects);
+            glm::vec3 sum = buildPixel(x, y, screenP, lights, sceneObjects, shadowMap);
             pixels[count] = rgbToInt32(sum);
             count++;
         }

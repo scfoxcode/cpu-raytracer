@@ -2,10 +2,12 @@
 #define __sphere__
 #include <glm/glm.hpp>
 #include "icollidable.h"
+#include <vector>
 
 class Sphere: public ICollidable {
 public:
     glm::vec3 position;
+    std::vector<glm::vec3> points;
     float radius;
 
     Sphere();

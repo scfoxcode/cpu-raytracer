@@ -10,11 +10,9 @@
 // One great reference
 // https://www.youtube.com/watch?v=HFPlKQGChpE
 
-const int RESX = 1920;
-const int RESY = 1080;
-const int bpp = 4; // RGBA
+const int RESX = 1280; //960;
+const int RESY = 720; //540;
 const int pixelCount = RESX * RESY;
-const int pixelIntCount = pixelCount * bpp;
 
 Camera initCamera() {
     return {
@@ -60,19 +58,20 @@ MaybeIntersectObject rayClosestIntersect(
     return output;
 }
 
-uint32_t buildPixel(
+glm::vec3 buildPixel(
     int x,
     int y,
     ScreenProperties& screenP,
     Lights& lights,
     std::vector<ICollidable*>& objects) {
+    glm::vec3 colour(0.0f, 0.0f, 0.0f);
 
     // Test ray for pixel against every object in the scene
     Ray r = buildRayForScreenPixel(screenP, x, y); 
     MaybeIntersectObject maybe = rayClosestIntersect(r, objects);
 
     if (!maybe.raypath.intersect) {
-        return 0; // Ray didn't hit anything
+        return colour; // Ray didn't hit anything
     }
     ICollidable& hit = *maybe.target;
 
@@ -81,31 +80,39 @@ uint32_t buildPixel(
     // If there is a collision, that light does not contribute to the pixel
     std::vector<glm::vec3> colours;
     for (int i=0; i<lights.size(); i++) {
-        Ray r2 = buildRayForPoints(lights[i]->emitter.position, maybe.raypath.position);
-        r2.position += r2.direction * 0.001f; // Tiny hack to move ray slightly away from intial collision
+        glm::vec3 colourForLight(0.0f, 0.0f, 0.0f);
+        int numPoints = lights[i]->emitter.points.size();
+        for (int j=0; j<numPoints; j++) { // Multi samples for soft shadows
+            Ray r2 = buildRayForPoints(lights[i]->emitter.points[j], maybe.raypath.position);
+            r2.position += r2.direction * 0.001f; // Tiny hack to move ray slightly away from intial collision
 
-        float dot = glm::dot(r2.direction, hit.getSurfaceNormal(r2.position));
-        if (dot < 0) {
-            continue; // Surface is facing away from the light
+            float dot = glm::dot(r2.direction, hit.getSurfaceNormal(r2.position));
+            if (dot < 0) {
+                continue; // Surface is facing away from the light
+            }
+
+            MaybeIntersectObject test2 = rayClosestIntersect(r2, objects);
+            bool isLightInView = !test2.raypath.intersect;
+
+            if (!isLightInView) {
+                continue;
+            }
+
+            colourForLight += lights[i]->colour * lights[i]->brightness * dot * 1.0f/float(numPoints);
         }
-
-        MaybeIntersectObject test2 = rayClosestIntersect(r2, objects);
-        bool isLightInView = !test2.raypath.intersect;
-
-        if (!isLightInView) {
-            continue;
-        }
-
-        // Light is in view, add colour
-        colours.push_back(lights[i]->colour * lights[i]->brightness * dot);
+        colours.push_back(colourForLight);
     }
     
     // Add all contributing hdr colours together
-    glm::vec3 colour;
     for (int i=0; i<colours.size(); i++) {
         colour += colours[i];
     }
 
+    return colour;
+
+}
+
+uint32_t rgbToInt32(glm::vec3& colour) {
     // Tone map hdr into 0-1 range
     colour = reinhardExtended(colour);
 
@@ -119,10 +126,17 @@ uint32_t buildPixel(
 
 void setupSceneLights(Lights& lights) {
     lights.push_back(new Light(
-        Sphere(glm::vec3(0.0, 20.0, -20.0), 1.0f),
-        glm::vec3(1.0f, 1.0f, 0.8f),
+        Sphere(glm::vec3(-5.0, 20.0, -35.0), 2.0f),
+        glm::vec3(0.9f, 0.9f, 0.7f),
         2.5f
     ));
+    /*
+    lights.push_back(new Light(
+        Sphere(glm::vec3(-18.0, 20.0, -10.0), 1.0f),
+        glm::vec3(0.8f, 0.0f, 0.0f),
+        0.5f
+    ));
+    */
 }
 
 void setupSpheres(std::vector<ICollidable*>& sceneObjects) {
@@ -176,7 +190,7 @@ int main(int argc, char *argv[]) {
 
     // Count cores, maybe useful one day
     const int cpuCount = std::thread::hardware_concurrency();
-    printf("%i Cores available, but only single treaded is currently implemented\n", cpuCount);
+    printf("%i Cores available, but only single threaded is currently implemented\n", cpuCount);
 
     // Create a camera and a sphere in the scene
     Camera camera = initCamera();
@@ -221,7 +235,8 @@ int main(int argc, char *argv[]) {
     int count = 0;
     for (int y=0; y<RESY; y++) {
         for (int x=0; x<RESX; x++) {
-            pixels[count] = buildPixel(x, y, screenP, lights, sceneObjects);
+            glm::vec3 sum = buildPixel(x, y, screenP, lights, sceneObjects);
+            pixels[count] = rgbToInt32(sum);
             count++;
         }
     }

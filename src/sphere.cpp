@@ -15,6 +15,19 @@ Sphere::~Sphere() {
 void Sphere::init(glm::vec3 position, float radius) {
     this->position = position;
     this->radius = radius;
+
+    // When sphere is used as light source, we want multiple points to sample for soft shadows
+    points.push_back(position);
+    /*
+    points.push_back(position + glm::vec3(radius, 0.0, 0.0));
+    points.push_back(position + glm::vec3(-radius, 0.0, 0.0));
+    points.push_back(position + glm::vec3(0.0, radius, 0.0));
+    points.push_back(position + glm::vec3(0.0, -radius, 0.0));
+    points.push_back(position + glm::vec3(0.0, 0.0, radius));
+    points.push_back(position + glm::vec3(0.0, 0.0, -radius));
+    */
+    // I think we need a low resolution shadow buffer, or
+    // binary search on the circle shape to get a percentage visible
 };
 
 // Should build a real maybe type, not this hackery, or pass a reference in and return bool

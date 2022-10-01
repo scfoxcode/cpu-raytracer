@@ -1,8 +1,9 @@
 #include "tonemapping.h"
 
 float reinhardExtendedFloat(float lume) {
-    float white = 16.0f; // We should get this from the brightest value on screen before tone mapping
-    float extended = 1 + (lume / white);
+    // 16.0f is bad for multi samples of light
+    float white = 32.0f; // We should get this from the brightest value on screen before tone mapping
+    float extended = 1.0f + (lume / white);
 
     return lume * extended / (1.0f + lume);
 }
